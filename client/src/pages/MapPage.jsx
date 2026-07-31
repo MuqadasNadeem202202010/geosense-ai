@@ -18,6 +18,18 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
+import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
+import markerIcon from "leaflet/dist/images/marker-icon.png";
+import markerShadow from "leaflet/dist/images/marker-shadow.png";
+
+delete L.Icon.Default.prototype._getIconUrl;
+
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: markerIcon2x,
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
+});
+
 function ChangeMapView({ center }) {
   const map = useMap();
 
@@ -221,7 +233,7 @@ function MapPage() {
         .trim();
 
       const countryRes = await fetch(
-        `https://restcountries.com/v3.1/name/${country}`
+        `https://restcountries.com/v3.1/name/${country}?fields=name,capital,region,population,currencies,flags`
       );
 
       const countryData = await countryRes.json();
