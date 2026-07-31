@@ -731,17 +731,6 @@ function MapPage() {
             </button>
 
             <button
-              onClick={() => setMapType("terrain")}
-              className={`px-5 py-2 rounded-xl font-medium transition-colors ${
-                mapType === "terrain"
-                  ? "bg-cyan-500 text-slate-950"
-                  : "bg-slate-800 text-white hover:bg-slate-700"
-              }`}
-            >
-              Terrain
-            </button>
-
-            <button
               onClick={() => {
                 setSearchText("");
                 setSearchedLocation("");
@@ -841,13 +830,6 @@ function MapPage() {
                   <TileLayer
                     attribution="Carto"
                     url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-                  />
-                )}
-
-                {mapType === "terrain" && (
-                  <TileLayer
-                    attribution="Esri"
-                    url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}"
                   />
                 )}
 
