@@ -34,17 +34,20 @@ function ShapefileUpload({
 
       const arrayBuffer = await zipFile.arrayBuffer();
 
-      const data = await shp(arrayBuffer);
+      let data = await shp(arrayBuffer);
+
+      if (Array.isArray(data)) {
+        data = {
+          type: "FeatureCollection",
+          features: data.flatMap(
+            (item) => item.features || []
+          ),
+        };
+      }
 
       console.log("GeoJSON Data:", data);
 
-      let features = [];
-
-      if (data?.features) {
-        features = data.features;
-      } else if (Array.isArray(data)) {
-        features = data[0]?.features || [];
-      }
+      const features = data.features || [];
 
       setFeatureCount(features.length);
 
@@ -63,11 +66,7 @@ function ShapefileUpload({
         features[0]?.properties
       );
 
-      setGeoData(null);
-
-      setTimeout(() => {
-        setGeoData(data);
-      }, 50);
+      setGeoData(data);
 
       setLoaded(true);
     } catch (error) {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import ShapefileUpload from "../components/ShapefileUpload";
@@ -140,14 +140,14 @@ function MapPage() {
 
   const [geoData, setGeoData] = useState(null);
   const [selectedFeature, setSelectedFeature] = useState(null);
+  const [selectedFeatureId, setSelectedFeatureId] = useState(null);
   const [copied, setCopied] = useState(false);
   const [layerKey, setLayerKey] = useState(0);
   const [tableData, setTableData] = useState([]);
 
   const [featureSearch, setFeatureSearch] = useState("");
-  const [highlightedFeature, setHighlightedFeature] =
-    useState(null);
   const [zoomFeature, setZoomFeature] = useState(null);
+  const [downloadFeature, setDownloadFeature] = useState(null);
   const [mouseCoords, setMouseCoords] = useState(null);
 
   const [countryInfo, setCountryInfo] = useState(null);
@@ -233,7 +233,7 @@ function MapPage() {
         .trim();
 
       const countryRes = await fetch(
-        `https://restcountries.com/v3.1/name/${country}?fields=name,capital,region,population,currencies,flags`
+        `https://restcountries.com/v3.1/name/${country}`
       );
 
       const countryData = await countryRes.json();
@@ -357,6 +357,156 @@ function MapPage() {
       alert("Failed to download map");
     }
   };
+
+  const downloadFullShapefileMap = async () => {
+    if (!geoData) {
+      alert("Upload a shapefile first");
+      return;
+    }
+
+    setZoomFeature(null);
+
+    setTimeout(async () => {
+      try {
+        const mapElement =
+          document.querySelector(".leaflet-container");
+
+        if (!mapElement) {
+          alert("Map not found");
+          return;
+        }
+
+        const canvas = await html2canvas(mapElement, {
+          useCORS: true,
+          allowTaint: true,
+        });
+
+        const a = document.createElement("a");
+
+        a.href = canvas.toDataURL("image/png");
+        a.download = "shapefile-map.png";
+        a.click();
+      } catch (error) {
+        console.error(error);
+        alert("Failed to download map");
+      }
+    }, 800);
+  };
+
+  const downloadSelectedFeatureMap = async () => {
+    if (!selectedFeature || !zoomFeature) {
+      alert("Select a feature first");
+      return;
+    }
+
+    setDownloadFeature(zoomFeature);
+
+    setTimeout(async () => {
+      try {
+        const mapElement =
+          document.querySelector(".leaflet-container");
+
+        if (!mapElement) {
+          alert("Map not found");
+          return;
+        }
+
+        const canvas = await html2canvas(mapElement, {
+          useCORS: true,
+          allowTaint: true,
+        });
+
+        const name =
+          selectedFeature?.NAME ||
+          selectedFeature?.Name ||
+          selectedFeature?.name ||
+          "selected-feature";
+
+        const a = document.createElement("a");
+
+        a.href = canvas.toDataURL("image/png");
+        a.download = `${name}.png`;
+        a.click();
+      } catch (error) {
+        console.error(error);
+        alert("Failed to download map");
+      } finally {
+        setDownloadFeature(null);
+      }
+    }, 800);
+  };
+
+  const exportGeoJSON = () => {
+    if (!selectedFeatureId || !geoData) {
+      alert("Select a feature first");
+      return;
+    }
+
+    const feature = geoData.features.find(
+      (f) =>
+        (
+          f.id ??
+          f.properties.OBJECTID ??
+          f.properties.ID ??
+          f.properties.FID
+        ) === selectedFeatureId
+    );
+
+    if (!feature) {
+      alert("Select a feature first");
+      return;
+    }
+
+    const blob = new Blob(
+      [JSON.stringify(feature, null, 2)],
+      { type: "application/json" }
+    );
+
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "selected-feature.geojson";
+    a.click();
+  };
+
+  const exportCSV = () => {
+    if (!selectedFeature) {
+      alert("Select a feature first");
+      return;
+    }
+
+    const { __featureId, ...cleanFeature } = selectedFeature;
+
+    const csv =
+      Object.keys(cleanFeature).join(",") +
+      "\n" +
+      Object.values(cleanFeature).join(",");
+
+    const blob = new Blob([csv], {
+      type: "text/csv",
+    });
+
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "selected-feature.csv";
+    a.click();
+  };
+
+  const filteredTableData = tableData.filter((feature) =>
+    JSON.stringify(feature.properties)
+      .toLowerCase()
+      .includes(featureSearch.toLowerCase())
+  );
+
+  const selectedRowRef = useRef(null);
+
+  useEffect(() => {
+    if (selectedFeatureId !== null && selectedRowRef.current) {
+      selectedRowRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }
+  }, [selectedFeatureId]);
 
   return (
     <>
@@ -575,9 +725,10 @@ function MapPage() {
               setGeoData={(data) => {
                 setGeoData(data);
                 setSelectedFeature(null);
-                setHighlightedFeature(null);
+                setSelectedFeatureId(null);
                 setZoomFeature(null);
                 setLayerKey((prev) => prev + 1);
+                setFeatureSearch("");
 
                 const features = data?.features
                   ? data.features
@@ -590,101 +741,103 @@ function MapPage() {
               clearMapData={() => {
                 setGeoData(null);
                 setSelectedFeature(null);
-                setHighlightedFeature(null);
-                setZoomFeature(null);
+                setSelectedFeatureId(null);
                 setTableData([]);
+                setFeatureSearch("");
                 setLayerKey((prev) => prev + 1);
               }}
             />
           )}
 
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 mb-6">
-            <h3 className="text-xl font-semibold text-cyan-400 mb-4">
-              Compare Two Locations
-            </h3>
+          {mode === "search" && (
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 mb-6">
+              <h3 className="text-xl font-semibold text-cyan-400 mb-4">
+                Compare Two Locations
+              </h3>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <input
-                type="text"
-                value={loc1}
-                onChange={(e) => setLoc1(e.target.value)}
-                placeholder="Enter First Location"
-                className="p-3 rounded-xl bg-slate-800 border border-slate-700 outline-none focus:border-cyan-500"
-              />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <input
+                  type="text"
+                  value={loc1}
+                  onChange={(e) => setLoc1(e.target.value)}
+                  placeholder="Enter First Location"
+                  className="p-3 rounded-xl bg-slate-800 border border-slate-700 outline-none focus:border-cyan-500"
+                />
 
-              <input
-                type="text"
-                value={loc2}
-                onChange={(e) => setLoc2(e.target.value)}
-                placeholder="Enter Second Location"
-                className="p-3 rounded-xl bg-slate-800 border border-slate-700 outline-none focus:border-cyan-500"
-              />
-            </div>
-
-            <div className="flex flex-wrap gap-3">
-              <button
-                onClick={compareLocations}
-                className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-semibold px-6 py-2.5 rounded-xl transition-colors"
-              >
-                Compare Distance
-              </button>
-
-              <button
-                onClick={() => {
-                  setCompareLocation1(null);
-                  setCompareLocation2(null);
-                  setCompareDistance(null);
-                  setTravelTime(null);
-                  setRouteCoords([]);
-                  setLoc1("");
-                  setLoc2("");
-                }}
-                className="bg-red-500 hover:bg-red-600 px-6 py-2 rounded-xl font-semibold"
-              >
-                Clear Route
-              </button>
-            </div>
-
-            {compareDistance && (
-              <div className="mt-4 bg-slate-800 p-5 rounded-xl">
-                <h3 className="text-cyan-400 font-semibold mb-3">
-                  Comparison Result
-                </h3>
-
-                <div className="space-y-2">
-                  <p>
-                    <span className="font-bold">
-                      From:
-                    </span>{" "}
-                    {loc1}
-                  </p>
-
-                  <p>
-                    <span className="font-bold">
-                      To:
-                    </span>{" "}
-                    {loc2}
-                  </p>
-
-                  <p>
-                    🚗 Distance:{" "}
-                    {compareDistance} km
-                  </p>
-
-                  <p>
-                    ⏱ Travel Time:{" "}
-                    {travelTime}
-                  </p>
-
-                  <p className="text-green-400">
-                    Route Found ✅
-                  </p>
-                </div>
+                <input
+                  type="text"
+                  value={loc2}
+                  onChange={(e) => setLoc2(e.target.value)}
+                  placeholder="Enter Second Location"
+                  className="p-3 rounded-xl bg-slate-800 border border-slate-700 outline-none focus:border-cyan-500"
+                />
               </div>
-            )}
-          </div>
 
-          <div className="flex justify-center flex-wrap gap-4 mb-6">
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={compareLocations}
+                  className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-semibold px-6 py-2.5 rounded-xl transition-colors"
+                >
+                  Compare Distance
+                </button>
+
+                <button
+                  onClick={() => {
+                    setCompareLocation1(null);
+                    setCompareLocation2(null);
+                    setCompareDistance(null);
+                    setTravelTime(null);
+                    setRouteCoords([]);
+                    setLoc1("");
+                    setLoc2("");
+                  }}
+                  className="bg-red-500 hover:bg-red-600 px-6 py-2 rounded-xl font-semibold"
+                >
+                  Clear Route
+                </button>
+              </div>
+
+              {compareDistance && (
+                <div className="mt-4 bg-slate-800 p-5 rounded-xl">
+                  <h3 className="text-cyan-400 font-semibold mb-3">
+                    Comparison Result
+                  </h3>
+
+                  <div className="space-y-2">
+                    <p>
+                      <span className="font-bold">
+                        From:
+                      </span>{" "}
+                      {loc1}
+                    </p>
+
+                    <p>
+                      <span className="font-bold">
+                        To:
+                      </span>{" "}
+                      {loc2}
+                    </p>
+
+                    <p>
+                      🚗 Distance:{" "}
+                      {compareDistance} km
+                    </p>
+
+                    <p>
+                      ⏱ Travel Time:{" "}
+                      {travelTime}
+                    </p>
+
+                    <p className="text-green-400">
+                      Route Found ✅
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex flex-wrap justify-center gap-2 md:gap-4 mb-6">
 
             <button
               onClick={() => setMapType("street")}
@@ -737,9 +890,10 @@ function MapPage() {
                 setPosition([33.6844, 73.0479]);
                 setGeoData(null);
                 setSelectedFeature(null);
-                setHighlightedFeature(null);
+                setSelectedFeatureId(null);
                 setZoomFeature(null);
                 setTableData([]);
+                setFeatureSearch("");
                 setCountryInfo(null);
                 setWeatherInfo(null);
                 setDistance(null);
@@ -761,7 +915,6 @@ function MapPage() {
               onClick={() => {
                 setPosition([33.6844, 73.0479]);
                 setZoomFeature(null);
-                setHighlightedFeature(null);
               }}
               className="px-5 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-semibold"
             >
@@ -769,10 +922,31 @@ function MapPage() {
             </button>
 
             <button
-              onClick={downloadMapImage}
-              className="px-5 py-2 rounded-xl bg-green-500 hover:bg-green-600 text-white font-semibold transition-colors"
+              onClick={downloadFullShapefileMap}
+              className="px-5 py-2 rounded-xl bg-green-500 hover:bg-green-600 text-white font-semibold"
             >
-              Download Map
+              Download Shapefile Map
+            </button>
+
+            <button
+              onClick={downloadSelectedFeatureMap}
+              className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-semibold"
+            >
+              Download Selected Feature
+            </button>
+
+            <button
+              onClick={exportGeoJSON}
+              className="px-5 py-2 rounded-xl bg-purple-500 hover:bg-purple-600 text-white font-semibold transition-colors"
+            >
+              Export GeoJSON
+            </button>
+
+            <button
+              onClick={exportCSV}
+              className="px-5 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-semibold transition-colors"
+            >
+              Export CSV
             </button>
 
           </div>
@@ -783,10 +957,7 @@ function MapPage() {
               <MapContainer
                 center={position}
                 zoom={16}
-                style={{
-                  height: "600px",
-                  width: "100%",
-                }}
+                className="h-[450px] md:h-[600px] w-full"
               >
                 <ChangeMapView center={position} />
                 <ScaleControl position="bottomleft" />
@@ -794,6 +965,10 @@ function MapPage() {
 
                 {zoomFeature && (
                   <ZoomToFeature feature={zoomFeature} />
+                )}
+
+                {downloadFeature && (
+                  <ZoomToFeature feature={downloadFeature} />
                 )}
 
                 <ZoomToRoute
@@ -886,18 +1061,31 @@ function MapPage() {
                   />
                 )}
 
+                {geoData && !zoomFeature && (
+                  <ZoomToGeoJSON data={geoData} />
+                )}
+
                 {geoData && (
                   <>
-                    <ZoomToGeoJSON data={geoData} />
-
                     <GeoJSON
                       key={layerKey}
                       data={geoData}
-                      style={{
-                        color: "#06b6d4",
-                        weight: 2,
-                        fillColor: "#06b6d4",
-                        fillOpacity: 0.3,
+                      style={(feature) => {
+                        const currentId =
+                          feature.id ??
+                          feature.properties.OBJECTID ??
+                          feature.properties.ID ??
+                          feature.properties.FID;
+
+                        const isSelected =
+                          selectedFeatureId === currentId;
+
+                        return {
+                          color: isSelected ? "red" : "#06b6d4",
+                          weight: isSelected ? 4 : 2,
+                          fillColor: isSelected ? "red" : "#06b6d4",
+                          fillOpacity: isSelected ? 0.4 : 0.3,
+                        };
                       }}
                       pointToLayer={(feature, latlng) =>
                         L.circleMarker(latlng, {
@@ -909,25 +1097,31 @@ function MapPage() {
                         })
                       }
                       onEachFeature={(feature, layer) => {
+                        layer.bindTooltip(
+                          feature.properties.NAME ||
+                            feature.properties.name ||
+                            "Feature"
+                        );
+
                         layer.on("click", () => {
-                          setSelectedFeature(feature.properties);
-                          setHighlightedFeature(feature);
+                          const featureId =
+                            feature.id ??
+                            feature.properties.OBJECTID ??
+                            feature.properties.ID ??
+                            feature.properties.FID ??
+                            Math.random();
+
+                          setSelectedFeature({
+                            ...feature.properties,
+                            __featureId: featureId,
+                          });
+
+                          setSelectedFeatureId(featureId);
                           setZoomFeature(feature);
+                          setLayerKey((p) => p + 1);
                         });
                       }}
                     />
-
-                    {highlightedFeature && (
-                      <GeoJSON
-                        data={highlightedFeature}
-                        style={{
-                          color: "red",
-                          weight: 4,
-                          fillColor: "red",
-                          fillOpacity: 0.2,
-                        }}
-                      />
-                    )}
                   </>
                 )}
               </MapContainer>
@@ -935,7 +1129,7 @@ function MapPage() {
             </div>
 
             {mode === "shapefile" && (
-              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 flex flex-col max-h-[600px] overflow-y-auto">
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 md:p-6 flex flex-col max-h-[600px] overflow-y-auto">
                 <div>
                   <h3 className="text-xl font-semibold mb-4 text-cyan-400">
                     {selectedFeature?.name ||
@@ -955,7 +1149,8 @@ function MapPage() {
                             !key.toLowerCase().includes("ne_id") &&
                             !key.toLowerCase().includes("wdid") &&
                             !key.toLowerCase().includes("comments") &&
-                            !key.toLowerCase().startsWith("name_")
+                            !key.toLowerCase().startsWith("name_") &&
+                            key !== "__featureId"
                         )
                         .map(([key, value]) => (
                           <div
@@ -983,7 +1178,7 @@ function MapPage() {
                   <button
                     onClick={() => {
                       setSelectedFeature(null);
-                      setHighlightedFeature(null);
+                      setSelectedFeatureId(null);
                       setZoomFeature(null);
                     }}
                     className="mt-6 w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-2.5 rounded-xl transition-colors text-sm"
@@ -1041,6 +1236,92 @@ function MapPage() {
               <p className="text-slate-400 text-sm">
                 Lon: {selectedPlace.lon.toFixed(5)}
               </p>
+            </div>
+          )}
+
+          {mode === "shapefile" && tableData.length > 0 && (
+            <div className="mt-6 bg-slate-900 border border-slate-800 rounded-xl p-4 overflow-auto">
+              <h3 className="text-cyan-400 font-bold text-lg mb-4">
+                Attribute Table
+              </h3>
+
+              <input
+                type="text"
+                value={featureSearch}
+                onChange={(e) =>
+                  setFeatureSearch(e.target.value)
+                }
+                placeholder="Search attribute table..."
+                className="w-full mb-4 p-3 rounded-lg bg-slate-800 border border-slate-700 outline-none focus:border-cyan-500"
+              />
+
+              <div className="max-h-[500px] overflow-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr>
+                      {Object.keys(tableData[0].properties || {}).map((key) => (
+                        <th
+                          key={key}
+                          className="border border-slate-700 px-2 py-2 text-left"
+                        >
+                          {key}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {filteredTableData.map((feature, rowIndex) => {
+                      const currentId =
+                        feature.id ??
+                        feature.properties.OBJECTID ??
+                        feature.properties.ID ??
+                        feature.properties.FID ??
+                        rowIndex;
+
+                      const isSelected = selectedFeatureId === currentId;
+
+                      return (
+                        <tr
+                          key={`row-${rowIndex}`}
+                          ref={isSelected ? selectedRowRef : null}
+                          onClick={() => {
+                            const featureId =
+                              feature.id ??
+                              feature.properties.OBJECTID ??
+                              feature.properties.ID ??
+                              feature.properties.FID ??
+                              rowIndex;
+
+                            setSelectedFeature({
+                              ...feature.properties,
+                              __featureId: featureId,
+                            });
+
+                            setSelectedFeatureId(featureId);
+                            setZoomFeature(feature);
+                            setLayerKey((p) => p + 1);
+                          }}
+                          className={`cursor-pointer hover:bg-slate-800 ${
+                            isSelected
+                              ? "bg-red-700 text-white font-bold"
+                              : ""
+                          }`}
+                        >
+                          {Object.values(feature.properties || {}).map((value, colIndex) => (
+                            <td
+                              key={`cell-${rowIndex}-${colIndex}`}
+                              className="border border-slate-700 px-2 py-2"
+                            >
+                              {String(value)}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
