@@ -26,7 +26,7 @@ function ResetPassword() {
       const email = localStorage.getItem("resetEmail");
 
       const response = await fetch(
-        "http://localhost:5000/api/auth/reset-password",
+        "https://geosense-ai-oxjd.vercel.app/api/auth/reset-password",
         {
           method: "POST",
           headers: {

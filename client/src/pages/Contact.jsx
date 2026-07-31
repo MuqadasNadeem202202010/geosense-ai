@@ -13,7 +13,7 @@ function Contact() {
 
     try {
       await axios.post(
-        "http://localhost:5000/api/auth/contact",
+        "https://geosense-ai-oxjd.vercel.app/api/auth/contact",
         {
           name,
           email,

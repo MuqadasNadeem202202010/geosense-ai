@@ -56,7 +56,7 @@ function Signup() {
 
     try {
       const response = await fetch(
-        "http://localhost:5000/api/auth/signup",
+        "https://geosense-ai-oxjd.vercel.app/api/auth/signup",
         {
           method: "POST",
           headers: {
